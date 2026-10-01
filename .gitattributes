@@ -1,0 +1,25 @@
+# Line endings matter here: these files are cloned onto Linux VMs, Windows VMs
+# and WSL2, often from a Windows machine. Pin them so nobody hits
+# "bash: $'\r': command not found" or a Python file Linux refuses to run.
+
+* text=auto
+
+# must be LF - they run on Linux
+*.sh   text eol=lf
+*.py   text eol=lf
+*.txt  text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+
+# Windows-native, conventionally CRLF (PowerShell accepts either)
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# never touch these
+*.png  binary
+*.jpg  binary
+*.zip  binary
+*.docx binary
+*.pptx binary
+*.db   binary

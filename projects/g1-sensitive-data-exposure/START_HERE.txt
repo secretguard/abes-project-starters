@@ -1,0 +1,329 @@
+==============================================================================
+  ABES PROJECT - G1 SENSITIVE DATA EXPOSURE - START HERE
+  Sensitive Data Exposure: detection of secrets leaked to external clients
+==============================================================================
+
+You have been given working code. You do not need to type any of it.
+Your job is to put it in the right place, run it in the right order, and be
+able to explain what it does. This file tells you exactly how.
+
+Read the walkthrough document alongside this file - it explains WHY each piece
+exists, which is what you will be asked in the demo.
+
+Total time: about 1.5 hours if nothing goes wrong.
+
+
+------------------------------------------------------------------------------
+  WHAT YOU WERE GIVEN
+------------------------------------------------------------------------------
+
+  app_public.py   the exposed service. Serves a fake secret at /public to
+                  anyone who asks, writes access.log, and also serves your
+                  findings dashboard at /dashboard.
+
+  app_local.py    your control. Serves a different fake secret, but ONLY to
+                  the machine it runs on. Proving this one cannot be reached
+                  from outside is part of your project.
+
+  detector.py     your project. Reads the log and reports any secret that
+                  was sent to an external address.
+
+  selftest.py     checks the code works before you touch the network.
+
+  START_HERE.txt  this file.
+
+
+------------------------------------------------------------------------------
+  THE TWO MACHINES - KNOW WHICH ONE YOU ARE TYPING INTO
+------------------------------------------------------------------------------
+
+  TARGET   = your Ubuntu virtual machine in VirtualBox. The victim.
+             ALL FOUR PYTHON FILES GO HERE. Almost all your work is here.
+
+  ATTACKER = WSL2 Ubuntu, opened from the Windows Start menu by typing
+             "Ubuntu". It plays the outsider. You type exactly two commands
+             here, in STEP 4.
+
+  If you are ever unsure which machine a terminal belongs to, run:  hostname
+  The two machines give different answers.
+
+
+------------------------------------------------------------------------------
+  STEP 1 - PUT THE FILES ON THE TARGET VM           (10 min)
+------------------------------------------------------------------------------
+
+All four files go in your HOME FOLDER on the target VM. That is the folder you
+land in when you open a terminal, written as  ~  (and shown as /home/<yourname>).
+
+Easiest way to get them there:
+
+  1. Start the target Ubuntu VM and log in.
+  2. Open Firefox INSIDE the VM (not on Windows).
+  3. Open the shared project folder link your trainer sent you.
+  4. Download all four files.
+  5. Open the Files app, go to Downloads, select the four files, Ctrl+X,
+     then go to Home and Ctrl+V.
+
+Or, if you prefer the terminal:
+
+      cd ~
+      mv ~/Downloads/app_public.py ~/Downloads/app_local.py .
+      mv ~/Downloads/detector.py ~/Downloads/selftest.py .
+
+Now confirm they are in the right place:
+
+      cd ~
+      ls -1 app_public.py app_local.py detector.py selftest.py
+
+  EXPECT: all four names listed, no "No such file" errors.
+
+IMPORTANT: if you already made files with these names while following earlier
+instructions, these new files REPLACE them. Do not keep two versions in two
+folders - you will lose an hour wondering why your edits do nothing.
+
+
+------------------------------------------------------------------------------
+  STEP 2 - INSTALL FLASK AND TEST THE CODE          (10 min)
+------------------------------------------------------------------------------
+
+On the TARGET VM, in a terminal:
+
+      sudo apt update
+      sudo apt install -y python3-flask curl
+
+  Do NOT use "pip install flask". On current Ubuntu it fails with
+  "error: externally-managed-environment". The apt command above is correct.
+
+Now test the code, still on the target VM:
+
+      cd ~
+      python3 selftest.py
+
+  EXPECT: a list of PASS lines, ending with "ALL TESTS PASSED".
+
+  If it says ALL TESTS PASSED, your code is correct. Everything that can go
+  wrong from here is setup, not code. If a check FAILS, the output tells you
+  exactly what to fix - do that first and run selftest.py again.
+
+  SAVE THIS: screenshot the ALL TESTS PASSED output.
+             -> evidence/day_selftest.png
+
+
+------------------------------------------------------------------------------
+  STEP 3 - PUT THE VM ON THE NETWORK AND START BOTH APPS      (20 min)
+------------------------------------------------------------------------------
+
+3a. The VM must be reachable from WSL2. By default VirtualBox blocks this.
+
+      - Shut the VM down.
+      - VirtualBox > select the VM > Settings > Network
+      - Attached to: BRIDGED ADAPTER   (pick your real Wi-Fi/Ethernet in Name)
+      - OK, then start the VM again.
+
+3b. On the TARGET VM, find its IP address:
+
+      hostname -I | awk '{print $1}'
+
+  EXPECT: something like 192.168.1.42
+  WRITE IT DOWN. Everywhere below says <target-ip> - use this number.
+  If it starts with 10.0.2. the adapter is still NAT - redo 3a.
+
+3c. Start both services. EACH NEEDS ITS OWN TERMINAL WINDOW, and each window
+    will then look frozen. That is correct - leave them open.
+
+      TERMINAL 1 (target VM):     cd ~
+                                  python3 app_public.py
+
+      TERMINAL 2 (target VM):     cd ~
+                                  python3 app_local.py
+
+3d. In a THIRD terminal on the target VM, check both answer:
+
+      curl http://localhost:5000/public
+      curl http://localhost:5001/internal
+
+  EXPECT: SECRET=FAKE-PUBLIC-1234   then   SECRET=FAKE-LOCAL-9999
+
+  SAVE THIS: both outputs.  -> evidence/day2_app_up.txt
+
+  IF "Address already in use": that app is already running in another window.
+  IF only one works: you did not start both. Check both terminals are open.
+
+
+------------------------------------------------------------------------------
+  STEP 4 - THE ATTACK, AND THE CONTROL              (15 min)
+------------------------------------------------------------------------------
+
+Now switch to WSL2 - the outsider. Open it from the Windows Start menu.
+Only these two commands are typed here.
+
+4a. The attack. THIS SHOULD WORK:
+
+      curl http://<target-ip>:5000/public
+
+  EXPECT: SECRET=FAKE-PUBLIC-1234
+  You just fetched a secret from another machine. That is the leak.
+
+4b. The control. THIS SHOULD FAIL:
+
+      curl http://<target-ip>:5001/internal
+
+  EXPECT: "Connection refused" or a timeout.
+  A FAILURE HERE IS A PASS FOR YOUR PROJECT. It proves the local-only service
+  is genuinely unreachable from outside.
+
+  IF 4b SUCCEEDS: app_local.py was changed to 0.0.0.0. Put it back to
+  127.0.0.1, restart it, and try again. You need this to fail.
+
+4c. Back on the TARGET VM, make one local request so the log has both kinds:
+
+      curl http://localhost:5000/public
+
+4d. On the TARGET VM, look at your evidence and freeze a copy:
+
+      tail -n 5 access.log
+      cp access.log evidence.log
+
+  NOTE: an earlier email may have called this file evidence_arvind.log.
+  Either name is fine - detector.py takes the filename as an argument, so
+  whatever you name it, just pass the same name. Do not create both.
+
+  EXPECT: two different kinds of line. One shows your Windows laptop's LAN IP
+  (that is the outsider), one shows 127.0.0.1 (that is local).
+
+  NOTE: the outside line will show your WINDOWS laptop's IP, something like
+  192.168.1.7 - NOT a 172.x address. WSL2 sends its traffic out through
+  Windows, so that is the address the target sees. This is normal and your
+  detector handles it correctly. Do not go looking for a 172.x address.
+
+  SAVE THIS: the failed WSL2 curl, and the tail of access.log.
+             -> evidence/day2_control_and_log.txt
+
+
+------------------------------------------------------------------------------
+  STEP 5 - RUN THE DETECTOR                         (10 min)
+------------------------------------------------------------------------------
+
+On the TARGET VM:
+
+      cd ~
+      python3 detector.py evidence.log
+
+  EXPECT: one line starting "EXPOSURE:" naming your laptop's LAN IP and the
+  matched pattern, then a note that findings were written to findings.json.
+  The 127.0.0.1 request is NOT mentioned - it was correctly ignored.
+
+Now the negative control, which is what proves it is a detector:
+
+      grep "127.0.0.1" access.log > local_only.log
+      python3 detector.py local_only.log
+
+  EXPECT: "No external exposure found in local_only.log"
+
+  Same script. Same log format. A local request. Silent. That is your proof.
+
+  SAVE BOTH: -> evidence/day3_alert.txt
+             -> evidence/day3_negative_control.txt
+
+At this point your project is working and you could demo it.
+
+
+------------------------------------------------------------------------------
+  STEP 6 - THE FRONTEND (DASHBOARD)                 (15 min)
+------------------------------------------------------------------------------
+
+The dashboard is ALREADY BUILT INTO app_public.py. There is nothing to add.
+It reads findings.json - the file detector.py just wrote - and shows it as a
+colour-coded table. Red for High, orange for Medium, grey for Info.
+
+Test it properly. You will be asked whether it shows real data, so prove it:
+
+6a. Show it EMPTY first. On the target VM:
+
+      rm -f findings.json
+
+    Then in the terminal running app_public.py, press Ctrl+C and start it
+    again (it needs to pick up the deleted file):
+
+      python3 app_public.py
+
+    Open Firefox INSIDE the VM and go to:
+
+      http://localhost:5000/dashboard
+
+  EXPECT: the heading, and "No findings yet - run detector.py to populate this."
+
+  SCREENSHOT IT NOW, while it is empty.  -> evidence/day_frontend_empty.png
+
+6b. Now make a real detection happen. From WSL2:
+
+      curl http://<target-ip>:5000/public
+
+    Then on the target VM:
+
+      cp access.log evidence.log
+      python3 detector.py evidence.log
+
+6c. Refresh the dashboard in Firefox.
+
+  EXPECT: a row appears, with the time, the finding text naming the external
+  IP, and a RED "High" severity cell.
+
+  SCREENSHOT IT.  -> evidence/day_frontend_live.png
+
+Those two screenshots - empty, then populated by a request you actually made -
+are the strongest slide in your presentation. They show the dashboard is wired
+to your real detector and is not a mock-up.
+
+  IF the dashboard shows 404: app_public.py did not restart. Ctrl+C it and
+      start it again.
+  IF the table stays empty after running the detector: you ran the detector
+      from a different folder. Run "cd ~" first, then check "ls findings.json"
+      shows the file sitting next to app_public.py.
+
+
+------------------------------------------------------------------------------
+  STEP 7 - CHECK YOU HAVE EVERYTHING                (5 min)
+------------------------------------------------------------------------------
+
+On the target VM:
+
+      ls -1 ~/evidence/
+
+You should be able to point at proof of each of these:
+
+  [ ] selftest passing                     day_selftest.png
+  [ ] both services answering locally      day2_app_up.txt
+  [ ] the attack working from WSL2         day2_control_and_log.txt
+  [ ] the control FAILING from WSL2        day2_control_and_log.txt
+  [ ] the detector flagging the outsider   day3_alert.txt
+  [ ] the detector ignoring the local one  day3_negative_control.txt
+  [ ] the dashboard empty                  day_frontend_empty.png
+  [ ] the dashboard showing a real finding day_frontend_live.png
+
+If a box is empty, go back to that step - that is also the list of evidence
+your SRS report and your PPT demo slide are built from.
+
+
+------------------------------------------------------------------------------
+  IF YOU GET STUCK
+------------------------------------------------------------------------------
+
+Before changing any code, answer two questions:
+    Which machine am I on?      ->  run:  hostname
+    Which folder am I in?       ->  run:  pwd    (should be /home/<yourname>)
+
+Nine times out of ten, that is the whole problem.
+
+If you are still stuck, message your trainer with these three things:
+    1. which machine you were on
+    2. the exact command you ran
+    3. the full error text, copied or photographed
+
+Those three facts get you an answer in minutes. Do not lose an hour on one
+command - the project matters more than any single step.
+
+==============================================================================
+  Sarath G | Cybersecurity Trainer & Consultant
+  CEH Master | CPENT | LPT | CHFI | CEI | ISC2 CC
+==============================================================================

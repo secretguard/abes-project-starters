@@ -1,0 +1,397 @@
+==============================================================================
+  ABES PROJECT - G3 RANSOMWARE DETECTION - START HERE
+  Ransomware (T1486) detection on Windows using Sysmon
+==============================================================================
+
+You have been given working code. You do not need to type any of it.
+Your job is to put it in the right place, run it in the right order, and be
+able to explain what it does. This file tells you exactly how.
+
+Total time: about 2 hours if nothing goes wrong.
+
+
+------------------------------------------------------------------------------
+  READ THIS FIRST - SAFETY. THIS IS NOT OPTIONAL.
+------------------------------------------------------------------------------
+
+You are going to run a real ransomware TECHNIQUE TEST. It is from Atomic Red
+Team, a standard public security-testing framework, and it is designed for
+labs - but it DOES write and encrypt files.
+
+  1. Run it ONLY inside your Windows VM. Never on your host laptop.
+  2. The VM's network must be set to Host-Only or Internal, NOT Bridged.
+     It must not be able to reach your home network.
+  3. TAKE A SNAPSHOT of the clean VM before you run anything.
+     VirtualBox: VM > Snapshots > Take. Name it "clean-before-t1486".
+  4. The Defender exclusion goes on your LAB FOLDER ONLY (C:\AtomicLab).
+     Never disable Defender on the whole machine.
+  5. When you are finished and have your evidence, REVERT to the snapshot.
+
+If you have no snapshot, stop and take one now. Everything else in this file
+assumes you can throw the VM away and get it back.
+
+
+------------------------------------------------------------------------------
+  WHAT YOU WERE GIVEN
+------------------------------------------------------------------------------
+
+  detector.py        your project. Reads a Sysmon CSV export, finds the
+                     ransomware encryption burst, stores incidents in SQLite,
+                     and exports findings.json for the screen.
+
+  export_sysmon.ps1  pulls the Sysmon events out of the Windows event log into
+                     two CSV files - your attack window and your control
+                     window. PowerShell script, not a cmd command.
+
+  index.html         the live findings viewer. Auto-refreshes every 3 seconds.
+
+  selftest.py        checks the code works before you touch Sysmon at all.
+
+  START_HERE.txt     this file.
+
+All of them go in  C:\AtomicLab
+
+
+------------------------------------------------------------------------------
+  cmd OR PowerShell? THIS TRIPS UP ALMOST EVERYONE
+------------------------------------------------------------------------------
+
+You need BOTH, for different things:
+
+  Command Prompt (cmd)   ->  python commands
+                             cd C:\AtomicLab
+                             python detector.py sysmon_events.csv
+
+  PowerShell (as Admin)  ->  anything starting with a hyphenated verb:
+                             Get-WinEvent, Invoke-AtomicTest, Export-Csv
+                             and running export_sysmon.ps1
+
+If you paste a Get-WinEvent command into cmd you get:
+    'Get-WinEvent' is not recognized as an internal or external command
+That does NOT mean anything is broken. It means you are in the wrong shell.
+
+How to tell which one you are in: the prompt.
+    C:\AtomicLab>            <- Command Prompt
+    PS C:\AtomicLab>         <- PowerShell
+
+
+------------------------------------------------------------------------------
+  STEP 1 - PUT THE FILES IN C:\AtomicLab              (10 min)
+------------------------------------------------------------------------------
+
+Inside the Windows VM:
+
+  1. Make the folder if it does not exist. In Command Prompt:
+
+         mkdir C:\AtomicLab
+
+  2. Download the four files into it (open the project folder link your
+     trainer sent, from inside the VM).
+
+  3. Confirm they are all there. In Command Prompt:
+
+         cd C:\AtomicLab
+         dir
+
+  EXPECT: detector.py, export_sysmon.ps1, index.html, selftest.py all listed.
+
+IMPORTANT: if you already made a detector.py here while following earlier
+instructions, this new file REPLACES it. Do not keep two versions.
+
+
+------------------------------------------------------------------------------
+  STEP 2 - CHECK PYTHON AND TEST THE CODE             (10 min)
+------------------------------------------------------------------------------
+
+In Command Prompt, inside the VM:
+
+      python --version
+
+  EXPECT: Python 3.something. If "python is not recognized", install Python
+  from python.org and TICK "Add python.exe to PATH" during setup.
+
+Now test the code. This builds its own fake Sysmon data, so it needs no
+Sysmon, no event log and no attack:
+
+      cd C:\AtomicLab
+      python selftest.py
+
+  EXPECT: a list of PASS lines ending with ALL TESTS PASSED.
+
+  If it says ALL TESTS PASSED, your CODE is correct. Everything that can go
+  wrong from here is setup - Sysmon not running, wrong shell, empty export -
+  and never the code. If a check FAILS, the output names the exact fix.
+
+  SAVE THIS: screenshot the ALL TESTS PASSED output.
+             -> evidence/day_selftest.png
+
+Note: you do NOT need Flask, psutil or any pip install for this project.
+detector.py uses only Python's built-in modules, and SQLite is built in too.
+
+
+------------------------------------------------------------------------------
+  STEP 3 - CONFIRM SYSMON IS RUNNING                  (10 min)
+------------------------------------------------------------------------------
+
+Sysmon is what records the file activity your detector reads. In Command
+Prompt inside the VM:
+
+      sc query sysmon
+
+  EXPECT: STATE : 4  RUNNING
+  (it may be listed as sysmon64 - try  sc query sysmon64  as well)
+
+If it is not installed, install it in PowerShell as Administrator:
+
+      cd C:\AtomicLab
+      .\Sysmon64.exe -accepteula -i
+
+Then confirm the log exists. PowerShell as Administrator:
+
+      Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 3
+
+  EXPECT: three recent events printed.
+  IF "No events were found": Sysmon is installed but has logged nothing yet.
+  Open a few files to generate activity, then try again.
+
+  SAVE THIS: the sc query output.  -> evidence/day1_sysmon_running.txt
+
+
+------------------------------------------------------------------------------
+  STEP 4 - RUN THE T1486 ATOMIC TEST                  (20 min)
+------------------------------------------------------------------------------
+
+Snapshot taken? Network isolated? If not, go back to the safety section.
+
+In PowerShell AS ADMINISTRATOR, inside the VM:
+
+      Install-Module -Name Invoke-AtomicRedTeam -Scope CurrentUser -Force
+      Import-Module Invoke-AtomicRedTeam
+
+      # WRITE DOWN the time before you start
+      Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+      Invoke-AtomicTest T1486 -GetPrereqs
+      Invoke-AtomicTest T1486
+
+      # WRITE DOWN the time when it finishes
+      Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+  EXPECT: the test runs and completes. Files in the lab folder get encrypted
+  or renamed - that is the point.
+
+  WRITE BOTH TIMES DOWN. You need them for your report, and they tell you
+  how far back to export in the next step.
+
+  SAVE THIS: the two timestamps and the test output.
+             -> evidence/day2_t1486_run.txt
+
+  IF Defender blocks it: your exclusion is not set on C:\AtomicLab. Set it
+      on that folder only, then re-run.
+  IF the module will not install: you are not running PowerShell as
+      Administrator, or the VM has no internet to download the module. If it
+      has no internet, download the module on your host, copy it in, and keep
+      the VM isolated.
+
+
+------------------------------------------------------------------------------
+  STEP 5 - EXPORT THE EVIDENCE                        (10 min)
+------------------------------------------------------------------------------
+
+In PowerShell AS ADMINISTRATOR:
+
+      cd C:\AtomicLab
+      powershell -ExecutionPolicy Bypass -File export_sysmon.ps1
+
+  This writes TWO files, which are your two test cases:
+
+      sysmon_events.csv     the last 15 minutes - should contain the attack
+      sysmon_baseline.csv   30-40 minutes ago - ordinary activity, your control
+
+  EXPECT: two "wrote N events to ..." lines, both with N greater than 0.
+
+  IF the attack window has 0 events, or your test ran longer ago than 15
+  minutes, widen it:
+
+      powershell -ExecutionPolicy Bypass -File export_sysmon.ps1 -AttackMinutes 60
+
+  IF the baseline window has 0 events, shift it further back:
+
+      powershell -ExecutionPolicy Bypass -File export_sysmon.ps1 -BaselineFrom 120 -BaselineTo 100
+
+  WHY USE THE SCRIPT instead of a Get-WinEvent command: it formats the
+  timestamp as yyyy-MM-dd HH:mm:ss explicitly. A plain Export-Csv writes dates
+  in your machine's local format (like 30-09-2026), which detector.py cannot
+  read - and it fails SILENTLY, reporting zero events with no explanation.
+  The script removes that whole problem.
+
+  SAVE THIS: the export output showing both event counts.
+             -> evidence/day2_export.txt
+
+
+------------------------------------------------------------------------------
+  STEP 6 - DETECT, AND PROVE THE CONTROL              (15 min)
+------------------------------------------------------------------------------
+
+In Command Prompt:
+
+      cd C:\AtomicLab
+      python detector.py sysmon_events.csv
+
+  EXPECT: CONFIRMED [High] or [Critical], naming how many file writes happened
+  in one short window, a few sample file names, and the process that started
+  just before the burst.
+
+Now the negative control. SAME command, SAME settings, different file:
+
+      python detector.py sysmon_baseline.csv
+
+  EXPECT: CLEAN: no encryption burst found
+
+  THIS IS THE MOST IMPORTANT RESULT IN YOUR PROJECT. You changed nothing
+  between the two runs - no edited timestamps, no changed threshold. The same
+  detector says CONFIRMED on the attack and CLEAN on ordinary activity. That
+  is what makes it a detector and not just an alarm.
+
+  SAVE BOTH: -> evidence/day3_alert.txt
+             -> evidence/day3_negative_control.txt
+
+  IF the attack also says CLEAN: the burst may be spread wider than 10
+  seconds, or the test wrote fewer files than expected. Look at the
+  "N are FileCreate" number it printed. Then try a wider window or a lower
+  threshold, and SAY SO in your report - tuning a threshold against real data
+  is a legitimate finding, not a failure:
+
+      python detector.py sysmon_events.csv --window 30 --threshold 10
+
+  IF the baseline says CONFIRMED: your baseline window overlaps the attack.
+  Re-export with -BaselineFrom 120 -BaselineTo 100 and try again.
+
+
+------------------------------------------------------------------------------
+  STEP 7 - THE FRONTEND (LIVE VIEWER)                 (15 min)
+------------------------------------------------------------------------------
+
+index.html reads findings.json - the file detector.py just wrote - and draws
+it as a colour-coded table that refreshes itself every 3 seconds.
+
+  CRITICAL: it must be SERVED, not double-clicked. Opening the file directly
+  gives a file:/// address, and browsers block a file:/// page from reading
+  another file. The table would stay empty forever.
+
+7a. Show it EMPTY first. In Command Prompt:
+
+      cd C:\AtomicLab
+      del findings.json
+      del incidents.db
+      python -m http.server 8000
+
+    Leave that window running - it is a server, it is meant to look frozen.
+    Open a browser inside the VM and go to:
+
+      http://localhost:8000/index.html
+
+  EXPECT: "No findings yet - run python detector.py ... to populate this."
+
+  SCREENSHOT IT NOW, while it is empty.  -> evidence/day_frontend_empty.png
+
+7b. In a NEW Command Prompt window (leave the server running):
+
+      cd C:\AtomicLab
+      python detector.py sysmon_events.csv
+
+7c. Go back to the browser. Do not even refresh - wait 3 seconds.
+
+  EXPECT: the finding appears on its own, with a red or dark-red severity
+  cell and the burst description.
+
+  SCREENSHOT IT.  -> evidence/day_frontend_live.png
+
+Those two screenshots - empty, then populated by a detection you actually ran
+- are the strongest slide in your presentation. They prove the screen is
+driven by your real detector and your real Sysmon evidence, not sample data.
+
+  IF the table shows an error about file:/// - you double-clicked index.html.
+      Use the http://localhost:8000/index.html address instead.
+  IF it stays on "No findings yet" - findings.json is not in C:\AtomicLab.
+      Check with  dir findings.json  in that folder.
+  IF "port already in use" - a server is already running. Use port 8001 and
+      open http://localhost:8001/index.html instead.
+
+
+------------------------------------------------------------------------------
+  STEP 8 - CHECK YOU HAVE EVERYTHING                  (5 min)
+------------------------------------------------------------------------------
+
+You should be able to point at proof of each of these:
+
+  [ ] clean snapshot taken before the test   (VirtualBox snapshot list)
+  [ ] selftest passing                       day_selftest.png
+  [ ] Sysmon running                         day1_sysmon_running.txt
+  [ ] the T1486 test running, with times     day2_t1486_run.txt
+  [ ] both CSV exports with event counts     day2_export.txt
+  [ ] the detector CONFIRMING the attack     day3_alert.txt
+  [ ] the detector CLEAN on the baseline     day3_negative_control.txt
+  [ ] the viewer empty                       day_frontend_empty.png
+  [ ] the viewer showing a real finding      day_frontend_live.png
+
+That list is also exactly what your SRS report and your PPT demo slide are
+built from.
+
+WHEN YOU ARE DONE: revert the VM to your clean snapshot. Copy your evidence
+folder out FIRST - reverting destroys everything on the VM.
+
+
+------------------------------------------------------------------------------
+  WHAT TO SAY IN YOUR DEMO (5 minutes)
+------------------------------------------------------------------------------
+
+  1. The problem (30s): "Ransomware is only obvious after the damage. The
+     signal while it is happening is a sudden burst of file writes."
+
+  2. The lab (45s): "An isolated, snapshotted Windows VM with Sysmon logging
+     file and process activity. The attack is the Atomic Red Team T1486
+     technique test, so it is a recognised technique and not a script I wrote
+     to flatter my own detector."
+
+  3. The detection (60s): "My detector counts Sysmon FileCreate events per
+     ten-second window. Twenty or more is an encryption burst. It records the
+     incident in SQLite and names the process that started just before it."
+
+  4. The attack, live (45s): run detector.py on sysmon_events.csv. CONFIRMED.
+
+  5. The control, live (45s): run the SAME command on sysmon_baseline.csv.
+     CLEAN. "Nothing changed between those two runs except the input."
+
+  6. The screen (45s): show the viewer updating by itself within 3 seconds.
+
+  7. The point (30s): "Counting a burst rather than filtering a time range is
+     what makes this a detector. It had to stay quiet on normal activity, and
+     it did."
+
+If you are asked one hard question it will be "how do you know it is not a
+false positive?" The answer is step 5: same detector, same threshold,
+ordinary activity, silent.
+
+
+------------------------------------------------------------------------------
+  IF YOU GET STUCK
+------------------------------------------------------------------------------
+
+Before changing any code, answer three questions:
+    Which shell am I in?    -> look at the prompt: C:\> is cmd, PS C:\> is PowerShell
+    Which folder am I in?   -> run:  cd       (it prints the current folder)
+    Did selftest pass?      -> if yes, the code is fine; this is a setup problem
+
+If you are still stuck, message your trainer with these three things:
+    1. which shell you were in (cmd or PowerShell)
+    2. the exact command you ran
+    3. the full error text, copied or photographed
+
+Those three facts get you an answer in minutes. Do not lose an hour on one
+command - the project matters more than any single step.
+
+==============================================================================
+  Sarath G | Cybersecurity Trainer & Consultant
+  CEH Master | CPENT | LPT | CHFI | CEI | ISC2 CC
+==============================================================================

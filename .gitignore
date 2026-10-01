@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Student run output - these are produced by running the projects, not source.
+# They are listed so that a student who clones into their working folder does
+# not accidentally commit their own evidence or lab data.
+access.log
+evidence.log
+evidence_*.log
+local_only.log
+findings.json
+incidents.db
+sysmon_events.csv
+sysmon_baseline.csv
+sysmon_huge.csv
+evidence/
+
+# backups made by the populate scripts
+*.bak-*
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
