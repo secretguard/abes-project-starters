@@ -6,10 +6,13 @@
   G3 Ransomware/Sysmon project that is your isolated, snapshotted Windows VM.
 
   USAGE  (in PowerShell, from the folder you cloned)
-      powershell -ExecutionPolicy Bypass -File auto_populate.ps1
       powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -List
       powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Project NAME
-      powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Dir C:\MyLab
+      powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Project NAME -Dir C:\MyLab
+
+  -Project is REQUIRED. The script will not guess which project is yours:
+  your project is decided by your assignment, not by the machine you are
+  sitting at. Run -List to see the names, or read your run guide.
 
   WHAT IT DOES
       1. copies your project files into the project folder (C:\AtomicLab)
@@ -35,9 +38,13 @@ $ErrorActionPreference = "Stop"
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectsDir = Join-Path $RepoDir "projects"
 
-# the project that gets set up on a Windows machine
-$WindowsProject = "g3-ransomware-sysmon"
-$DefaultDir = "C:\AtomicLab"
+# This script sets up WINDOWS projects. Which project is NEVER guessed: the
+# student passes -Project, and each project's manifest declares the platform it
+# belongs on. Guessing from the operating system was wrong - a student who has
+# a Linux VM *and* Windows would silently get whichever project matched the
+# machine they happened to be typing on, which for the ransomware project could
+# mean landing it on their own laptop.
+$ThisPlatform = "windows"
 
 function Say  { param($m) Write-Host $m }
 function Ok   { param($m) Write-Host "  OK   " -ForegroundColor Green -NoNewline; Write-Host $m }
@@ -45,9 +52,35 @@ function Bad  { param($m) Write-Host "  FAIL " -ForegroundColor Red -NoNewline; 
 function Warn { param($m) Write-Host "  NOTE " -ForegroundColor Yellow -NoNewline; Write-Host $m }
 function Head { param($m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
 
+function Get-Conf {
+    param($dir, $key)
+    $f = Join-Path $dir "project.conf"
+    if (-not (Test-Path $f)) { return "" }
+    $line = Get-Content $f | Where-Object { $_ -match ("^" + [regex]::Escape($key) + "=") } |
+            Select-Object -First 1
+    if ($line) { return ($line -replace ("^" + [regex]::Escape($key) + "="), "") }
+    return ""
+}
+
 function Show-Projects {
-    Say "Available projects:"
-    Get-ChildItem -Path $ProjectsDir -Directory | ForEach-Object { Say ("  - " + $_.Name) }
+    Say ""
+    Say "Available projects - pick the one your trainer assigned you:"
+    Say ""
+    foreach ($d in Get-ChildItem -Path $ProjectsDir -Directory) {
+        $ti = Get-Conf $d.FullName "title"
+        $pf = Get-Conf $d.FullName "platform"
+        $mc = Get-Conf $d.FullName "machine"
+        Write-Host ("  " + $d.Name) -ForegroundColor White
+        if ($ti) { Say "      $ti" }
+        if ($mc) { Say "      runs on: $mc" }
+        if ($pf -eq $ThisPlatform) {
+            Write-Host ("      set up with:  powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Project " + $d.Name) -ForegroundColor Green
+        } else {
+            Write-Host "      not a Windows project" -ForegroundColor Yellow -NoNewline
+            Say (" - use " + (Get-Conf $d.FullName "script") + " on that machine instead")
+        }
+        Say ""
+    }
 }
 
 Say "=============================================================="
@@ -66,8 +99,12 @@ if (-not (Test-Path $ProjectsDir)) {
 if ($List) { Show-Projects; exit 0 }
 
 if ([string]::IsNullOrWhiteSpace($Project)) {
-    $Project = $WindowsProject
-    Warn "no -Project given, using the Windows project: $Project"
+    Bad "which project? I will not guess - you have to tell me."
+    Say "    Your project is NOT decided by which machine you are on. Two students"
+    Say "    on different projects can both be sitting at a Windows machine."
+    Show-Projects
+    Say "Nothing has been changed. Re-run with -Project <name> from the list above."
+    exit 2
 }
 
 $Src = Join-Path $ProjectsDir $Project
@@ -77,7 +114,25 @@ if (-not (Test-Path $Src)) {
     exit 1
 }
 
-if ([string]::IsNullOrWhiteSpace($Dir)) { $Dir = $DefaultDir }
+# refuse to set up a project that belongs on another platform
+$platform = Get-Conf $Src "platform"
+if ($platform -and $platform -ne $ThisPlatform) {
+    Bad "'$Project' is a $platform project - this script sets up $ThisPlatform projects."
+    Say ("    That project runs on: " + (Get-Conf $Src "machine"))
+    Say ("    Set it up there with:  " + (Get-Conf $Src "script"))
+    Say ""
+    Say "Nothing has been changed."
+    exit 3
+}
+
+# the project manifest decides where its files go
+if ([string]::IsNullOrWhiteSpace($Dir)) {
+    $Dir = Get-Conf $Src "target"
+    if ([string]::IsNullOrWhiteSpace($Dir)) { $Dir = "C:\AtomicLab" }
+}
+
+$title = Get-Conf $Src "title"
+if ($title) { Say "  project: $title" }
 
 # ----------------------------------------------------------------- 1. files
 Head "[1] Copying project files"
@@ -93,6 +148,8 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $copied = 0
 $backed = 0
 foreach ($f in Get-ChildItem -Path $Src -File) {
+    # project.conf is metadata for this script, not something the student needs
+    if ($f.Name -eq "project.conf") { continue }
     $dest = Join-Path $Dir $f.Name
     if (Test-Path $dest) {
         $same = $false
@@ -141,7 +198,8 @@ Head "[4] Checking project prerequisites"
 Say "    This project needs no pip packages - detector.py uses only Python's"
 Say "    built-in modules, and SQLite is built in too."
 
-if ($Project -eq $WindowsProject) {
+# feature detection: this project ships the Sysmon exporter
+if (Test-Path (Join-Path $Src "export_sysmon.ps1")) {
     $svc = $null
     foreach ($n in @("sysmon", "sysmon64")) {
         $s = Get-Service -Name $n -ErrorAction SilentlyContinue
@@ -216,7 +274,8 @@ Say "Read the full instructions:"
 Say "        notepad $Dir\START_HERE.txt"
 Say ""
 
-if ($Project -eq $WindowsProject) {
+# feature detection: this project ships the Sysmon exporter
+if (Test-Path (Join-Path $Src "export_sysmon.ps1")) {
     Write-Host "BEFORE YOU RUN THE ATTACK:" -ForegroundColor Yellow
     Say "   - this VM's network must be Host-Only or Internal, NOT Bridged"
     Say "   - TAKE A SNAPSHOT of the clean VM first (VirtualBox > Snapshots > Take)"

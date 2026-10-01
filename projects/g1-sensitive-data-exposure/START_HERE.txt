@@ -60,7 +60,7 @@ Terminal, and run:
 
       git clone https://github.com/secretguard/abes-project-starters
       cd abes-project-starters
-      bash auto_populate.sh
+      bash auto_populate.sh --project g1-sensitive-data-exposure
 
 That script copies the four files into your home folder, creates your
 evidence/ folder, checks what is missing, and runs the self test for you. If
@@ -70,7 +70,7 @@ and go straight to STEP 3.
   IF it says flask is NOT installed - that is normal on a fresh VM. Either run
   the apt command it prints and run the script again, or run it as:
 
-      bash auto_populate.sh --install-deps
+      bash auto_populate.sh --project g1-sensitive-data-exposure --install-deps
 
   IF "git: command not found" - install git, then retry the clone:
 

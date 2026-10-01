@@ -85,7 +85,7 @@ THE EASY WAY - in PowerShell, inside the VM:
 
       git clone https://github.com/secretguard/abes-project-starters
       cd abes-project-starters
-      powershell -ExecutionPolicy Bypass -File auto_populate.ps1
+      powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Project g3-ransomware-sysmon
 
 That script creates C:\AtomicLab, copies the four files into it, makes your
 evidence\ folder, checks Python and Sysmon, and runs the self test for you.

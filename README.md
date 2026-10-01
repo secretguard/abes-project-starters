@@ -28,13 +28,13 @@ cd abes-project-starters
 On **Linux** (e.g. your Ubuntu target VM):
 
 ```bash
-bash auto_populate.sh
+bash auto_populate.sh --project g1-sensitive-data-exposure
 ```
 
 On **Windows** (e.g. your isolated lab VM), in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File auto_populate.ps1
+powershell -ExecutionPolicy Bypass -File auto_populate.ps1 -Project g3-ransomware-sysmon
 ```
 
 The script copies your files into place, creates an `evidence/` folder, checks
