@@ -19,7 +19,7 @@ time on the part that is actually assessed: understanding and explaining it.
 **1. Get the files onto the machine where your project runs.**
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/secretguard/abes-project-starters.git
 cd abes-project-starters
 ```
 

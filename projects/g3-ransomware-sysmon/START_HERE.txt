@@ -81,12 +81,28 @@ How to tell which one you are in: the prompt.
 
 Inside the Windows VM:
 
-  1. Make the folder if it does not exist. In Command Prompt:
+THE EASY WAY - in PowerShell, inside the VM:
+
+      git clone https://github.com/secretguard/abes-project-starters
+      cd abes-project-starters
+      powershell -ExecutionPolicy Bypass -File auto_populate.ps1
+
+That script creates C:\AtomicLab, copies the four files into it, makes your
+evidence\ folder, checks Python and Sysmon, and runs the self test for you.
+
+  IF "git is not recognized" - install Git for Windows from git-scm.com, or
+  use the by-hand method below.
+
+BY HAND INSTEAD:
+
+  1. Make the folder. In Command Prompt:
 
          mkdir C:\AtomicLab
 
-  2. Download the four files into it (open the project folder link your
-     trainer sent, from inside the VM).
+  2. Open a browser INSIDE the VM and go to
+     https://github.com/secretguard/abes-project-starters
+     Open projects/g3-ransomware-sysmon and download all four files into
+     C:\AtomicLab (click a file, then the "Download raw file" button).
 
   3. Confirm they are all there. In Command Prompt:
 

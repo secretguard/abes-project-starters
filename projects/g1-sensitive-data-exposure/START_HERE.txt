@@ -55,16 +55,37 @@ Total time: about 1.5 hours if nothing goes wrong.
 All four files go in your HOME FOLDER on the target VM. That is the folder you
 land in when you open a terminal, written as  ~  (and shown as /home/<yourname>).
 
-Easiest way to get them there:
+THE EASY WAY - three commands. Start the target Ubuntu VM, log in, open a
+Terminal, and run:
 
-  1. Start the target Ubuntu VM and log in.
-  2. Open Firefox INSIDE the VM (not on Windows).
-  3. Open the shared project folder link your trainer sent you.
-  4. Download all four files.
-  5. Open the Files app, go to Downloads, select the four files, Ctrl+X,
+      git clone https://github.com/secretguard/abes-project-starters
+      cd abes-project-starters
+      bash auto_populate.sh
+
+That script copies the four files into your home folder, creates your
+evidence/ folder, checks what is missing, and runs the self test for you. If
+it ends with SETUP COMPLETE and ALL TESTS PASSED, you can skip STEP 2 below
+and go straight to STEP 3.
+
+  IF it says flask is NOT installed - that is normal on a fresh VM. Either run
+  the apt command it prints and run the script again, or run it as:
+
+      bash auto_populate.sh --install-deps
+
+  IF "git: command not found" - install git, then retry the clone:
+
+      sudo apt update && sudo apt install -y git
+
+BY HAND INSTEAD, if you prefer:
+
+  1. Open Firefox INSIDE the VM (not on Windows).
+  2. Go to https://github.com/secretguard/abes-project-starters
+  3. Open projects/g1-sensitive-data-exposure and download all four files
+     (click a file, then the "Download raw file" button).
+  4. Open the Files app, go to Downloads, select the four files, Ctrl+X,
      then go to Home and Ctrl+V.
 
-Or, if you prefer the terminal:
+Or move them from the terminal:
 
       cd ~
       mv ~/Downloads/app_public.py ~/Downloads/app_local.py .
