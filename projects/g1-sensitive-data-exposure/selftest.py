@@ -36,8 +36,9 @@ print("=" * 66)
 # ---------------------------------------------------------------- files present
 print("\n[1] Are all the files in this folder?")
 print("    folder:", HERE)
-expected = ["app_public.py", "app_local.py", "detector.py"]
-for fn in expected:
+needed = ["app_public.py", "app_local.py", "detector.py", "dashboard.html"]
+pyfiles = ["app_public.py", "app_local.py", "detector.py"]
+for fn in needed:
     check(fn + " is here", os.path.exists(os.path.join(HERE, fn)),
           "copy " + fn + " into this folder, then run selftest.py again")
 
@@ -48,7 +49,7 @@ if failed:
 # ------------------------------------------------------------ files are valid
 print("\n[2] Is the Python valid (no typing mistakes)?")
 import py_compile
-for fn in expected:
+for fn in pyfiles:
     try:
         py_compile.compile(os.path.join(HERE, fn), doraise=True)
         check(fn + " has no syntax errors", True)
@@ -120,8 +121,24 @@ finally:
     os.chdir(cwd)
     shutil.rmtree(tmp, ignore_errors=True)
 
+# ------------------------------------------------------- the dashboard wiring
+print("\n[6] Is the dashboard wired to your real findings?")
+_app = open(os.path.join(HERE, "app_public.py"), encoding="utf-8").read()
+_dash = open(os.path.join(HERE, "dashboard.html"), encoding="utf-8").read()
+check("app_public.py serves /dashboard", '"/dashboard"' in _app)
+check("app_public.py serves /api/findings", '"/api/findings"' in _app)
+check("the dashboard asks for /api/findings", "/api/findings" in _dash,
+      "without this the page has no data to draw")
+check("the dashboard refreshes itself", "setInterval" in _dash)
+check("/api/ is kept out of access.log", '"/api/"' in _app,
+      "otherwise the findings feed would plant fake SECRET= lines in your log")
+check("the dashboard needs no internet",
+      "http://" not in _dash.split("<script>")[0].replace("http://localhost", "")
+      .replace("http://<target-ip>", ""),
+      "it must work on a VM with no network")
+
 # ------------------------------------------------------------ flask installed
-print("\n[6] Is Flask installed on this machine?")
+print("\n[7] Is Flask installed on this machine?")
 try:
     import flask
     try:

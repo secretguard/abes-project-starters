@@ -30,12 +30,15 @@ LOCAL_IPS = ("127.0.0.1", "::1", "localhost")
 FINDINGS_FILE = "findings.json"   # app_public.py's /dashboard reads this
 
 
-def save_finding(summary, severity="High"):
+def save_finding(summary, severity="High", ip="", path="", pattern=""):
     """Append one finding to findings.json so the dashboard can display it.
 
     This lives HERE, in the detector, because the detector is what discovers
     the finding. The Flask app only reads the file. They are two separate
     programs and cannot call each other's functions - they share the file.
+
+    The ip, path and pattern are saved as their own fields rather than only
+    inside the sentence, so the dashboard can show them as sortable columns.
     """
     data = []
     if os.path.exists(FINDINGS_FILE):
@@ -43,7 +46,10 @@ def save_finding(summary, severity="High"):
             data = json.load(f)
     data.append({"time": datetime.datetime.now().strftime("%H:%M:%S"),
                  "summary": summary,
-                 "severity": severity})
+                 "severity": severity,
+                 "ip": ip,
+                 "path": path,
+                 "pattern": pattern})
     with open(FINDINGS_FILE, "w") as f:
         json.dump(data[-50:], f, indent=2)   # keep the last 50
 
@@ -94,7 +100,8 @@ def main():
             msg = (f"{r['ip']} reached {r['path']} and received a secret "
                    f"matching {r['pattern']}")
             print("EXPOSURE:", msg)
-            save_finding(msg, "High")     # <-- this is what feeds /dashboard
+            # <-- this is what feeds /dashboard
+            save_finding(msg, "High", r["ip"], r["path"], r["pattern"])
         print(f"\n{len(findings)} finding(s) written to {FINDINGS_FILE} - "
               f"refresh http://localhost:5000/dashboard to see them.")
     else:

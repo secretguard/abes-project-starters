@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<!--
+  dashboard.html  --  the screen for your Sensitive Data Exposure detector.
+
+  WHERE THIS GOES : your home folder on the TARGET Ubuntu VM, next to
+                    app_public.py (the setup script puts it there for you).
+
+  HOW TO SEE IT   : with app_public.py running, open in Firefox INSIDE the VM:
+                        http://localhost:5000/dashboard
+
+  HOW IT WORKS - this is the bit to be able to explain:
+      1. detector.py finds an exposure and appends it to findings.json
+      2. this page asks the app for /api/findings every few seconds
+      3. it draws whatever came back
+
+  So the screen is never fake. It shows nothing except what your own detector
+  found in your own log file. If findings.json is empty, the page is empty.
+
+  No internet needed, no libraries, no build step - one file, plain
+  HTML/CSS/JavaScript.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exposure Detector &mdash; Live Findings</title>
+<style>
+  /* ---------- colours -------------------------------------------------
+     Severity uses a fixed status palette. Two of those colours are light
+     against a white background, so severity is ALWAYS shown as a coloured
+     dot plus the word - never colour on its own. -------------------- */
+  :root {
+    color-scheme: light;
+    --plane:      #f9f9f7;
+    --surface:    #fcfcfb;
+    --ink:        #0b0b0b;
+    --ink-2:      #52514e;
+    --muted:      #898781;
+    --grid:       #e1e0d9;
+    --axis:       #c3c2b7;
+    --ring:       rgba(11,11,11,0.10);
+    --bar:        #2a78d6;
+    --sev-critical: #d03b3b;
+    --sev-high:     #ec835a;
+    --sev-medium:   #fab219;
+    --sev-low:      #898781;
+    --focus:      #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --plane: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+      --ring: rgba(255,255,255,0.10); --bar: #3987e5; --focus: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --ring: rgba(255,255,255,0.10); --bar: #3987e5; --focus: #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 22px 18px 40px;
+    background: var(--plane); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header { display: flex; flex-wrap: wrap; align-items: flex-end;
+           gap: 14px; margin-bottom: 18px; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 13px; margin: 3px 0 0; }
+  .spacer { flex: 1 1 auto; }
+  .pill { display: inline-flex; align-items: center; gap: 7px;
+          background: var(--surface); border: 1px solid var(--ring);
+          border-radius: 999px; padding: 5px 11px; font-size: 12.5px;
+          color: var(--ink-2); white-space: nowrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%;
+         background: #0ca30c; flex: none; }
+  .dot.paused { background: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) {
+    .dot.beat { animation: beat 2.4s ease-in-out infinite; }
+  }
+  @keyframes beat { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  button {
+    font: inherit; font-size: 12.5px; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--ring);
+    border-radius: 7px; padding: 6px 11px; cursor: pointer;
+  }
+  button:hover { color: var(--ink); border-color: var(--axis); }
+  button:focus-visible, input:focus-visible, tr:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+  button[aria-pressed="true"] { color: var(--ink); border-color: var(--axis); }
+
+  /* ---------- stat tiles ----------
+     Four plain numbers. With one or two findings a chart would be silly,
+     so the numbers lead and the charts only appear when there is enough
+     data for them to say anything. */
+  .tiles { display: grid; gap: 10px; margin-bottom: 16px;
+           grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .tile { background: var(--surface); border: 1px solid var(--ring);
+          border-radius: 10px; padding: 13px 15px; }
+  .tile .label { font-size: 11.5px; text-transform: uppercase;
+                 letter-spacing: 0.055em; color: var(--muted); }
+  .tile .value { font-size: 28px; font-weight: 600; margin-top: 3px;
+                 letter-spacing: -0.02em; }
+  .tile .note { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
+
+  /* ---------- one filter row, above everything ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+              margin-bottom: 14px; }
+  input[type="search"] {
+    font: inherit; font-size: 13px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--ring);
+    border-radius: 7px; padding: 7px 11px; min-width: 210px;
+  }
+  .chip { display: inline-flex; align-items: center; gap: 6px; }
+  .chip .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+  /* ---------- cards ---------- */
+  .card { background: var(--surface); border: 1px solid var(--ring);
+          border-radius: 10px; padding: 15px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 13.5px; font-weight: 600; margin: 0 0 2px; }
+  .card .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .grid2 { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+
+  /* ---------- severity bars ----------
+     A labelled row per severity: word, bar, count. The colour repeats what
+     the word already says, so nothing depends on telling two hues apart. */
+  .sevrow { display: grid; grid-template-columns: 74px 1fr 34px;
+            align-items: center; gap: 10px; margin-bottom: 7px; }
+  .sevname { font-size: 12.5px; color: var(--ink-2);
+             display: flex; align-items: center; gap: 6px; }
+  .track { height: 100%; }
+  .bar { height: 15px; border-radius: 0 4px 4px 0; min-width: 3px; }
+  .sevcount { font-size: 12.5px; color: var(--ink);
+              font-variant-numeric: tabular-nums; text-align: right; }
+
+  /* ---------- timeline ---------- */
+  /* bars are capped in width so a handful of them read as bars rather than
+     as one solid block across the card */
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 86px;
+           border-bottom: 1px solid var(--axis); }
+  .tcol { flex: 1 1 0; max-width: 44px; height: 100%;
+          display: flex; align-items: flex-end; }
+  .sbar { width: 100%; background: var(--bar); border-radius: 4px 4px 0 0;
+          min-height: 3px; cursor: default; }
+  .ticks { display: flex; gap: 3px; margin-top: 6px; }
+  .ticks span { flex: 1 1 0; max-width: 44px; font-size: 10.5px;
+                color: var(--muted); text-align: center; overflow: hidden;
+                white-space: nowrap; }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11.5px; text-transform: uppercase;
+       letter-spacing: 0.05em; color: var(--muted); font-weight: 600;
+       padding: 0 10px 7px; border-bottom: 1px solid var(--grid);
+       cursor: pointer; white-space: nowrap; }
+  th:hover { color: var(--ink-2); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--grid);
+       font-size: 13px; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: color-mix(in srgb, var(--focus) 6%, transparent); }
+  .mono { font-family: Consolas, Monaco, monospace; font-size: 12.5px;
+          font-variant-numeric: tabular-nums; }
+  .sevchip { display: inline-flex; align-items: center; gap: 6px;
+             font-size: 12.5px; white-space: nowrap; }
+  .sevchip .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .detail td { background: var(--plane); color: var(--ink-2);
+               font-size: 12.5px; }
+
+  .empty { text-align: center; padding: 34px 18px; color: var(--ink-2); }
+  .empty strong { display: block; color: var(--ink); font-size: 15px;
+                  margin-bottom: 6px; }
+  .empty pre { display: inline-block; text-align: left; margin: 12px 0 0;
+               background: var(--plane); border: 1px solid var(--ring);
+               border-radius: 8px; padding: 11px 13px; font-size: 12.5px;
+               font-family: Consolas, Monaco, monospace; color: var(--ink); }
+  .tip { position: fixed; z-index: 9; pointer-events: none; opacity: 0;
+         background: var(--ink); color: var(--surface); font-size: 12px;
+         padding: 5px 8px; border-radius: 6px; white-space: nowrap;
+         transition: opacity .1s; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Sensitive Data Exposure &mdash; Live Findings</h1>
+      <p class="sub">Read from <span class="mono">findings.json</span>, written by
+         <span class="mono">detector.py</span> from <span class="mono">access.log</span></p>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill"><span class="dot beat" id="dot"></span>
+      <span id="status" aria-live="polite">starting&hellip;</span></span>
+    <button id="pause" aria-pressed="false">Pause</button>
+    <button id="theme">Dark</button>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <div class="controls">
+    <input type="search" id="q" placeholder="Search IP, path or pattern&hellip;"
+           aria-label="Search findings">
+    <span id="sevfilter"></span>
+    <span class="spacer"></span>
+    <button id="clear">Clear filters</button>
+  </div>
+
+  <div class="grid2" id="charts"></div>
+
+  <section class="card">
+    <h2>Findings</h2>
+    <p class="hint" id="tablehint">Click any row to see the full detector output.</p>
+    <div id="tablewrap"></div>
+  </section>
+
+  <footer>
+    Auto-refreshes every 3 seconds. Nothing on this page is sample data &mdash;
+    if it is empty, your detector has not reported anything yet.
+  </footer>
+</div>
+
+<div class="tip" id="tip" role="status"></div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- settings
+var REFRESH_MS = 3000;
+var SEVERITIES = ["Critical", "High", "Medium", "Low", "Info"];
+var SEV_COLOUR = {
+  Critical: "var(--sev-critical)",
+  High:     "var(--sev-high)",
+  Medium:   "var(--sev-medium)",
+  Low:      "var(--sev-low)",
+  Info:     "var(--sev-low)"
+};
+
+// ---------------------------------------------------------------- state
+var all = [];                 // every finding from the server
+var hidden = {};              // severities the user switched off
+var query = "";
+var sortKey = "time";
+var sortDir = -1;             // newest first
+var paused = false;
+var openRow = null;
+var lastError = "";
+
+// ---------------------------------------------------------------- helpers
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function esc(s) { return String(s === undefined || s === null ? "" : s); }
+
+// A finding may be structured (ip/path/pattern fields) or, if it came from an
+// older detector.py, just a summary sentence. Read the fields when they are
+// there and fall back to pulling them out of the sentence when they are not.
+function normalise(f) {
+  var summary = esc(f.summary);
+  var ip = f.ip || (summary.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/) || [""])[0];
+  var path = f.path || (summary.match(/\s(\/[^\s]*)/) || ["", ""])[1];
+  var pattern = f.pattern || (summary.match(/matching\s+(\S+)/) || ["", ""])[1];
+  var sev = esc(f.severity) || "Info";
+  if (SEVERITIES.indexOf(sev) === -1) sev = "Info";
+  return { time: esc(f.time), ip: ip, path: path, pattern: pattern,
+           severity: sev, summary: summary };
+}
+
+function visible() {
+  var q = query.trim().toLowerCase();
+  return all.filter(function (f) {
+    if (hidden[f.severity]) return false;
+    if (!q) return true;
+    return (f.ip + " " + f.path + " " + f.pattern + " " + f.summary)
+           .toLowerCase().indexOf(q) !== -1;
+  });
+}
+
+function sorted(rows) {
+  var r = rows.slice();
+  r.sort(function (a, b) {
+    var x = a[sortKey] || "", y = b[sortKey] || "";
+    if (sortKey === "severity") {
+      x = SEVERITIES.indexOf(a.severity); y = SEVERITIES.indexOf(b.severity);
+      // list Critical first when descending
+      return (x - y) * -sortDir;
+    }
+    return x < y ? -sortDir : x > y ? sortDir : 0;
+  });
+  return r;
+}
+
+// ---------------------------------------------------------------- tooltip
+var tip = document.getElementById("tip");
+function showTip(e, text) {
+  tip.textContent = text;
+  tip.style.opacity = "1";
+  var pad = 12;
+  var x = Math.min(e.clientX + pad, window.innerWidth - tip.offsetWidth - 6);
+  tip.style.left = x + "px";
+  tip.style.top = Math.max(6, e.clientY - tip.offsetHeight - pad) + "px";
+}
+function hideTip() { tip.style.opacity = "0"; }
+
+// ---------------------------------------------------------------- tiles
+function drawTiles(rows) {
+  var box = document.getElementById("tiles");
+  var urgent = rows.filter(function (f) {
+    return f.severity === "Critical" || f.severity === "High";
+  }).length;
+  var ips = {};
+  rows.forEach(function (f) { if (f.ip) ips[f.ip] = 1; });
+  var ipCount = Object.keys(ips).length;
+  var latest = rows.length
+    ? sorted(rows.slice()).slice(0)[0]
+    : null;
+  if (latest && sortDir !== -1) {            // make sure we really take newest
+    latest = rows.slice().sort(function (a, b) { return a.time < b.time ? 1 : -1; })[0];
+  }
+
+  var tiles = [
+    ["Findings", String(rows.length), rows.length === 1 ? "1 exposure reported" : "reported by your detector"],
+    ["Critical or High", String(urgent), urgent ? "needs to be in your report" : "none so far"],
+    ["External sources", String(ipCount), ipCount === 1 ? "one outside machine" : "distinct outside machines"],
+    ["Latest", latest ? latest.time : "--", latest ? "most recent detection" : "nothing detected yet"]
+  ];
+
+  box.textContent = "";
+  tiles.forEach(function (t) {
+    var c = el("div", "tile");
+    c.appendChild(el("div", "label", t[0]));
+    c.appendChild(el("div", "value", t[1]));
+    c.appendChild(el("div", "note", t[2]));
+    box.appendChild(c);
+  });
+}
+
+// ---------------------------------------------------------------- charts
+// Deliberately conditional. With a single finding a bar chart of one bar
+// tells you nothing the big number above has not already said, so each
+// chart only appears once it has at least two things to compare.
+function drawCharts(rows) {
+  var box = document.getElementById("charts");
+  box.textContent = "";
+
+  var counts = {};
+  rows.forEach(function (f) { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  var present = SEVERITIES.filter(function (s) { return counts[s]; });
+
+  if (present.length >= 2) {
+    var card = el("section", "card");
+    card.appendChild(el("h2", null, "By severity"));
+    card.appendChild(el("p", "hint", "How many findings at each level."));
+    var max = 0;
+    present.forEach(function (s) { max = Math.max(max, counts[s]); });
+    present.forEach(function (s) {
+      var row = el("div", "sevrow");
+      var name = el("div", "sevname");
+      var sw = el("span", "sw");
+      sw.style.background = SEV_COLOUR[s];
+      name.appendChild(sw);
+      name.appendChild(document.createTextNode(s));
+      var track = el("div", "track");
+      var bar = el("div", "bar");
+      bar.style.width = Math.max(3, Math.round(counts[s] / max * 100)) + "%";
+      bar.style.background = SEV_COLOUR[s];
+      bar.addEventListener("mousemove", function (e) {
+        showTip(e, s + ": " + counts[s] + (counts[s] === 1 ? " finding" : " findings"));
+      });
+      bar.addEventListener("mouseleave", hideTip);
+      track.appendChild(bar);
+      row.appendChild(name);
+      row.appendChild(track);
+      row.appendChild(el("div", "sevcount", String(counts[s])));
+      card.appendChild(row);
+    });
+    box.appendChild(card);
+  }
+
+  // findings per minute
+  var buckets = {};
+  rows.forEach(function (f) {
+    var k = (f.time || "").slice(0, 5) || "--:--";
+    buckets[k] = (buckets[k] || 0) + 1;
+  });
+  var keys = Object.keys(buckets).sort();
+  if (keys.length >= 2) {
+    var c2 = el("section", "card");
+    c2.appendChild(el("h2", null, "When they happened"));
+    c2.appendChild(el("p", "hint", "Findings per minute. A burst in one minute is "
+      + "what an automated attack looks like."));
+    var maxB = 0;
+    keys.forEach(function (k) { maxB = Math.max(maxB, buckets[k]); });
+    var plot = el("div", "spark");
+    keys.forEach(function (k) {
+      var col = el("div", "tcol");
+      var b = el("div", "sbar");
+      b.style.height = Math.max(3, Math.round(buckets[k] / maxB * 80)) + "px";
+      b.addEventListener("mousemove", function (e) {
+        showTip(e, k + " - " + buckets[k] + (buckets[k] === 1 ? " finding" : " findings"));
+      });
+      b.addEventListener("mouseleave", hideTip);
+      col.appendChild(b);
+      plot.appendChild(col);
+    });
+    c2.appendChild(plot);
+    var ticks = el("div", "ticks");
+    keys.forEach(function (k, i) {
+      // label the ends only - a number under every bar is noise
+      ticks.appendChild(el("span", null,
+        (i === 0 || i === keys.length - 1) ? k : ""));
+    });
+    c2.appendChild(ticks);
+    box.appendChild(c2);
+  }
+}
+
+// ---------------------------------------------------------------- table
+function drawTable(rows) {
+  var wrap = document.getElementById("tablewrap");
+  wrap.textContent = "";
+
+  if (!all.length) {
+    var e = el("div", "empty");
+    e.appendChild(el("strong", null, "No findings yet"));
+    e.appendChild(el("div", null, "Your detector has not reported anything. "
+      + "Run the attack from WSL2, then run the detector:"));
+    var pre = el("pre", null,
+      "# in WSL2\ncurl http://<target-ip>:5000/public\n\n"
+      + "# on this VM\ncd ~\ncp access.log evidence.log\n"
+      + "python3 detector.py evidence.log");
+    e.appendChild(pre);
+    wrap.appendChild(e);
+    return;
+  }
+  if (!rows.length) {
+    var e2 = el("div", "empty");
+    e2.appendChild(el("strong", null, "Nothing matches your filters"));
+    e2.appendChild(el("div", null, "There are " + all.length
+      + " findings in total. Clear the filters to see them."));
+    wrap.appendChild(e2);
+    return;
+  }
+
+  var table = el("table");
+  var thead = el("thead");
+  var hr = el("tr");
+  [["time", "Time"], ["ip", "Source"], ["path", "Path"],
+   ["pattern", "Pattern"], ["severity", "Severity"]].forEach(function (c) {
+    var th = el("th", null, c[1] + (sortKey === c[0] ? (sortDir === 1 ? "  ↑" : "  ↓") : ""));
+    th.setAttribute("scope", "col");
+    th.addEventListener("click", function () {
+      if (sortKey === c[0]) { sortDir = -sortDir; } else { sortKey = c[0]; sortDir = -1; }
+      render();
+    });
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  var tb = el("tbody");
+  rows.forEach(function (f, i) {
+    var tr = el("tr");
+    tr.tabIndex = 0;
+    var td1 = el("td", "mono", f.time || "--");
+    var td2 = el("td", "mono", f.ip || "--");
+    var td3 = el("td", "mono", f.path || "--");
+    var td4 = el("td", "mono", f.pattern || "--");
+    var td5 = el("td");
+    var chip = el("span", "sevchip");
+    var sw = el("span", "sw");
+    sw.style.background = SEV_COLOUR[f.severity];
+    chip.appendChild(sw);
+    chip.appendChild(document.createTextNode(f.severity));
+    td5.appendChild(chip);
+    [td1, td2, td3, td4, td5].forEach(function (td) { tr.appendChild(td); });
+
+    function toggle() {
+      openRow = (openRow === f.summary) ? null : f.summary;
+      render();
+    }
+    tr.addEventListener("click", toggle);
+    tr.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
+    });
+    tb.appendChild(tr);
+
+    if (openRow === f.summary) {
+      var dr = el("tr", "detail");
+      var dtd = el("td");
+      dtd.colSpan = 5;
+      dtd.appendChild(el("div", null, "Full detector output:"));
+      var pre = el("div", "mono", f.summary);
+      pre.style.marginTop = "4px";
+      pre.style.color = "var(--ink)";
+      dtd.appendChild(pre);
+      dr.appendChild(dtd);
+      tb.appendChild(dr);
+    }
+  });
+  table.appendChild(tb);
+  wrap.appendChild(table);
+
+  document.getElementById("tablehint").textContent =
+    rows.length === all.length
+      ? "Click any row to see the full detector output."
+      : "Showing " + rows.length + " of " + all.length
+        + ". Click any row to see the full detector output.";
+}
+
+// ---------------------------------------------------------------- filters
+function drawFilters() {
+  var box = document.getElementById("sevfilter");
+  var counts = {};
+  all.forEach(function (f) { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  box.textContent = "";
+  SEVERITIES.forEach(function (s) {
+    if (!counts[s]) return;
+    var b = el("button", "chip");
+    b.setAttribute("aria-pressed", hidden[s] ? "false" : "true");
+    var sw = el("span", "sw");
+    sw.style.background = SEV_COLOUR[s];
+    if (hidden[s]) sw.style.opacity = "0.3";
+    b.appendChild(sw);
+    b.appendChild(document.createTextNode(s + " " + counts[s]));
+    b.addEventListener("click", function () {
+      hidden[s] = !hidden[s];
+      render();
+    });
+    box.appendChild(b);
+  });
+}
+
+// ---------------------------------------------------------------- render
+function render() {
+  var rows = sorted(visible());
+  drawTiles(rows);
+  drawFilters();
+  drawCharts(rows);
+  drawTable(rows);
+}
+
+// ---------------------------------------------------------------- data
+// Update in place. No clearing the screen first - a page that blanks itself
+// every three seconds is unreadable.
+function load() {
+  if (paused) return;
+  fetch("/api/findings?t=" + Date.now(), { cache: "no-store" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      if (!Array.isArray(data)) throw new Error("unexpected response");
+      all = data.map(normalise);
+      lastError = "";
+      var t = new Date();
+      document.getElementById("status").textContent = "updated " +
+        String(t.getHours()).padStart(2, "0") + ":" +
+        String(t.getMinutes()).padStart(2, "0") + ":" +
+        String(t.getSeconds()).padStart(2, "0");
+      document.getElementById("dot").classList.remove("paused");
+      render();
+    })
+    .catch(function (err) {
+      lastError = err.message;
+      document.getElementById("status").textContent = "cannot reach the app (" + err.message + ")";
+      document.getElementById("dot").classList.add("paused");
+    });
+}
+
+// ---------------------------------------------------------------- controls
+document.getElementById("q").addEventListener("input", function (e) {
+  query = e.target.value; render();
+});
+document.getElementById("clear").addEventListener("click", function () {
+  query = ""; hidden = {}; document.getElementById("q").value = ""; render();
+});
+document.getElementById("pause").addEventListener("click", function () {
+  paused = !paused;
+  this.textContent = paused ? "Resume" : "Pause";
+  this.setAttribute("aria-pressed", paused ? "true" : "false");
+  var dot = document.getElementById("dot");
+  dot.classList.toggle("paused", paused);
+  dot.classList.toggle("beat", !paused);
+  document.getElementById("status").textContent = paused ? "paused" : "resuming…";
+  if (!paused) load();
+});
+
+var themeBtn = document.getElementById("theme");
+function applyTheme(mode) {
+  if (mode) { document.documentElement.setAttribute("data-theme", mode); }
+  else { document.documentElement.removeAttribute("data-theme"); }
+  var dark = mode === "dark" ||
+    (!mode && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  themeBtn.textContent = dark ? "Light" : "Dark";
+}
+themeBtn.addEventListener("click", function () {
+  var cur = document.documentElement.getAttribute("data-theme");
+  var dark = cur === "dark" ||
+    (!cur && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  var next = dark ? "light" : "dark";
+  try { localStorage.setItem("abes-theme", next); } catch (e) {}
+  applyTheme(next);
+});
+try { applyTheme(localStorage.getItem("abes-theme")); } catch (e) { applyTheme(null); }
+
+// ---------------------------------------------------------------- go
+render();
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>

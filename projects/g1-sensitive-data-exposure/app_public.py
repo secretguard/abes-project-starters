@@ -11,13 +11,22 @@ HOW TO RUN IT   : open a Terminal on the target VM, then:
 
 WHAT IT DOES    : 1. serves a fake secret at  /public   (reachable from anywhere)
                   2. writes one line into access.log for every request
-                  3. serves your findings dashboard at  /dashboard
+                  3. serves your dashboard at  /dashboard
+                  4. serves the findings to that dashboard at /api/findings
+
+THE THREE PIECES - this is what to explain in your demo:
+    detector.py     finds an exposure and appends it to findings.json
+    /api/findings   hands that file to the browser as JSON
+    dashboard.html  asks for it every few seconds and draws it
+  They never call each other's code. They share one file. That is the whole
+  design, and it is why the screen can only ever show real findings.
 """
-from flask import Flask, request, render_template_string
+from flask import Flask, request, jsonify, send_from_directory
 import datetime, json, os
 
 app = Flask("public_app")
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = "access.log"            # the evidence your detector reads
 FINDINGS_FILE = "findings.json"    # written by detector.py, shown on /dashboard
 
@@ -29,9 +38,14 @@ def log_request(response):
     The line format is five pieces separated by single spaces:
         <timestamp> <who asked> <method> <what they asked for> <what we sent back>
     detector.py splits on those spaces, so the format matters.
+
+    The dashboard and its data feed are NOT logged, for two reasons. The
+    dashboard would fill access.log with HTML. And /api/findings sends your
+    findings back - which contain the text "SECRET=" - so logging it would
+    plant fake evidence in your own log file and could make your detector
+    report an exposure that never happened.
     """
-    if request.path.startswith("/dashboard"):
-        # don't log the dashboard itself, or access.log fills up with HTML
+    if request.path.startswith("/dashboard") or request.path.startswith("/api/"):
         return response
     body = response.get_data(as_text=True)
     with open(LOG_FILE, "a") as f:
@@ -46,44 +60,30 @@ def public():
     return "SECRET=FAKE-PUBLIC-1234"
 
 
-DASH_HTML = """
-<html><head><title>Exposure Detector - Live Findings</title>
-<meta charset="utf-8"></head>
-<body style="font-family:Arial,sans-serif;background:#f5f7fa;padding:24px">
-  <h2 style="color:#1F4E78;margin-bottom:4px">Sensitive Data Exposure - Live Findings</h2>
-  <p style="color:#667;margin-top:0">Detected by detector.py from access.log</p>
-  <table cellpadding="8" style="border-collapse:collapse;background:#fff;box-shadow:0 1px 3px #0002">
-    <tr style="background:#1F4E78;color:#fff">
-      <th align="left">Time</th><th align="left">Finding</th><th align="left">Severity</th>
-    </tr>
-    {% for r in rows %}
-    <tr style="border-top:1px solid #e3e8ee">
-      <td>{{ r.time }}</td>
-      <td>{{ r.summary }}</td>
-      <td style="color:#fff;font-weight:bold;background:{{ '#e74c3c' if r.severity in ('Critical','High')
-         else ('#f39c12' if r.severity == 'Medium' else '#95a5a6') }}">{{ r.severity }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% if not rows %}
-  <p style="color:#888">No findings yet - run detector.py to populate this.</p>
-  {% endif %}
-</body></html>
-"""
+@app.route("/api/findings")
+def api_findings():
+    """Hand findings.json to the dashboard as JSON.
+
+    This is why the dashboard is REAL and not a mock-up: it can only show what
+    your own detector wrote into this file.
+    """
+    if not os.path.exists(FINDINGS_FILE):
+        return jsonify([])            # nothing detected yet - an empty list
+    try:
+        with open(FINDINGS_FILE) as f:
+            return jsonify(json.load(f))
+    except (ValueError, OSError):
+        # a half-written or corrupt file should not take the whole page down
+        return jsonify([])
 
 
 @app.route("/dashboard")
 def dashboard():
-    """Reads findings.json (written by detector.py) and shows it as a table.
-
-    This is why the dashboard is REAL and not a mock-up: it displays nothing
-    except what your own detector actually found in your own log file.
-    """
-    rows = []
-    if os.path.exists(FINDINGS_FILE):
-        with open(FINDINGS_FILE) as f:
-            rows = json.load(f)
-    return render_template_string(DASH_HTML, rows=list(reversed(rows)))
+    """Serve the dashboard page itself - plain HTML, no templating."""
+    if not os.path.exists(os.path.join(HERE, "dashboard.html")):
+        return ("dashboard.html is missing from " + HERE
+                + " - copy it in next to app_public.py."), 500
+    return send_from_directory(HERE, "dashboard.html")
 
 
 if __name__ == "__main__":

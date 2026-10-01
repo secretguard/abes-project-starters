@@ -253,9 +253,20 @@ At this point your project is working and you could demo it.
   STEP 6 - THE FRONTEND (DASHBOARD)                 (15 min)
 ------------------------------------------------------------------------------
 
-The dashboard is ALREADY BUILT INTO app_public.py. There is nothing to add.
-It reads findings.json - the file detector.py just wrote - and shows it as a
-colour-coded table. Red for High, orange for Medium, grey for Info.
+The dashboard is ALREADY WRITTEN for you. There is nothing to build.
+
+It is three pieces, and this is what to be able to explain:
+
+  detector.py     finds an exposure and appends it to findings.json
+  /api/findings   a route in app_public.py that hands that file to the browser
+  dashboard.html  the page itself - it asks for /api/findings every 3 seconds
+                  and draws whatever came back
+
+They never call each other's code. They share one file. That is why the screen
+can only ever show real findings: if findings.json is empty, the page is empty.
+
+It gives you the counts at the top, a breakdown by severity, when the findings
+happened, and a searchable table you can sort and filter. It needs no internet.
 
 Test it properly. You will be asked whether it shows real data, so prove it:
 
